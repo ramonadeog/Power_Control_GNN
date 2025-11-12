@@ -171,7 +171,7 @@ def myloss3(out, data, batch_size, num_subnetworks,Noise_power, device):
     Interference_power = torch.sum(torch.mul(weighted_powers.squeeze(-1),1-eye), dim=1)
     signal_interference_ratio = torch.divide(desired_rcv_power,Interference_power+Noise_power)
     capacity = torch.log2(1+signal_interference_ratio)
-    EE = capacity/(power_mat/0.8+0.1)
+    EE = capacity/(weighted_powers.squeeze(-1)/0.8+0.1)
     EE_ = torch.mean(torch.sum(EE, axis=1))
     #Capacity_ = torch.mean(torch.sum(capacity, axis=1))
     
@@ -319,4 +319,5 @@ def findcdfvalue(x,y,yval1,yval2):
         m = np.mean(a)
 
         return m.item()
+
 
