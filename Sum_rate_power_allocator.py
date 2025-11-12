@@ -23,44 +23,6 @@ PA_EFFICIENCY = 1         # Typical OFDM PA efficiency (adjust as needed)
 CIRCUIT_POWER_W = 0       # 100 mW per transmitter (adjust)
 EPS = 1e-12                  # numerical floor
 
-def energy_efficiency_loss(out, data, Noise_power_lin, Pmax_lin=1.0):
-    """
-    Negative averaged per-link energy efficiency (bits/Joule) over the batch.
-    Assumes `out` are Sigmoid outputs in (0,1) interpreted as power fractions.
-    - data.y : channel gain matrix H per sample (K x K) or batched layout
-    - Noise_power_lin : noise power in linear Watts at the receiver
-    - Pmax_lin : max transmit power (Watts) that scales the fractions
-    """
-    # Shape handling matches the existing sum-rate code:
-    # out: (num_nodes, 1) or (batch*K, 1); data.y provides H
-    w = out.view(-1)                         # power fractions in (0,1)
-    K = data.num_subnetworks                 # or however K is obtained in the file
-    w = w.view(-1, K)                        # [batch, K]
-
-    # H: [batch, K, K] channel gains (desired on diag, interference off-diag)
-    H = data.y                               # reuse the repo’s convention
-    # Received desired power
-    desired = torch.diagonal(H, dim1=-2, dim2=-1) * (w * Pmax_lin)  # [batch, K]
-
-    # Interference power = H @ p  minus desired
-    p = (w * Pmax_lin).unsqueeze(-1)         # [batch, K, 1]
-    total_rx = torch.matmul(H, p).squeeze(-1)  # [batch, K]
-    interf = total_rx - desired
-
-    # SINR and per-link rate (bits/s)
-    sinr = desired / (interf + Noise_power_lin + EPS)
-    rate_bits_per_s = BANDWIDTH_HZ * torch.log2(1.0 + sinr)
-
-    # Power consumption per link (Watts)
-    tx_consumption = (w * Pmax_lin) / PA_EFFICIENCY
-    p_cons = tx_consumption + CIRCUIT_POWER_W
-
-    # Per-link EE (bits/Joule)
-    ee = rate_bits_per_s / (p_cons + EPS)    # [batch, K]
-
-    # Negative average EE over users and batch
-    loss = -ee.mean()
-    return loss
 
 
 def create_features(dist_matrix, power_matrix):
@@ -191,9 +153,68 @@ def myloss2(out, data, batch_size, num_subnetworks,Noise_power, device):
     Interference_power = torch.sum(torch.mul(weighted_powers.squeeze(-1),1-eye), dim=1)
     signal_interference_ratio = torch.divide(desired_rcv_power,Interference_power+Noise_power)
     capacity = torch.log2(1+signal_interference_ratio)
+
+    
     Capacity_ = torch.mean(torch.sum(capacity, axis=1))
     
     return torch.neg(Capacity_/num_subnetworks)
+
+def myloss3(out, data, batch_size, num_subnetworks,Noise_power, device):
+    out = out.reshape([-1,num_subnetworks])
+
+    out = out.reshape([-1,num_subnetworks,1,1])
+    power_mat = data.y.reshape([-1,num_subnetworks,num_subnetworks,1])
+    weighted_powers = torch.mul(out,power_mat)
+    eye = torch.eye(num_subnetworks).to(device)
+    desired_rcv_power = torch.sum(torch.mul(weighted_powers.squeeze(-1),eye), dim=1)
+    
+    Interference_power = torch.sum(torch.mul(weighted_powers.squeeze(-1),1-eye), dim=1)
+    signal_interference_ratio = torch.divide(desired_rcv_power,Interference_power+Noise_power)
+    capacity = torch.log2(1+signal_interference_ratio)
+    EE = capacity/(power_mat/0.8+0.1)
+    EE_ = torch.mean(torch.sum(EE, axis=1))
+    #Capacity_ = torch.mean(torch.sum(capacity, axis=1))
+    
+    return torch.neg(EE_/num_subnetworks)
+def energy_efficiency_loss(out, data, Noise_power_lin, Pmax_lin=1.0):
+    """
+    Negative averaged per-link energy efficiency (bits/Joule) over the batch.
+    Assumes `out` are Sigmoid outputs in (0,1) interpreted as power fractions.
+    - data.y : channel gain matrix H per sample (K x K) or batched layout
+    - Noise_power_lin : noise power in linear Watts at the receiver
+    - Pmax_lin : max transmit power (Watts) that scales the fractions
+    """
+    # Shape handling matches the existing sum-rate code:
+    # out: (num_nodes, 1) or (batch*K, 1); data.y provides H
+    w = out.view(-1)                         # power fractions in (0,1)
+    K = data.num_subnetworks                 # or however K is obtained in the file
+    w = w.view(-1, K)                        # [batch, K]
+
+    # H: [batch, K, K] channel gains (desired on diag, interference off-diag)
+    H = data.y                               # reuse the repo’s convention
+    # Received desired power
+    desired = torch.diagonal(H, dim1=-2, dim2=-1) * (w * Pmax_lin)  # [batch, K]
+
+    # Interference power = H @ p  minus desired
+    p = (w * Pmax_lin).unsqueeze(-1)         # [batch, K, 1]
+    total_rx = torch.matmul(H, p).squeeze(-1)  # [batch, K]
+    interf = total_rx - desired
+
+    # SINR and per-link rate (bits/s)
+    sinr = desired / (interf + Noise_power_lin + EPS)
+    rate_bits_per_s = BANDWIDTH_HZ * torch.log2(1.0 + sinr)
+
+    # Power consumption per link (Watts)
+    tx_consumption = (w * Pmax_lin) / PA_EFFICIENCY
+    p_cons = tx_consumption + CIRCUIT_POWER_W
+
+    # Per-link EE (bits/Joule)
+    ee = rate_bits_per_s / (p_cons + EPS)    # [batch, K]
+
+    # Negative average EE over users and batch
+    loss = -ee.mean()
+    return loss
+
 
 def train(model2, train_loader, optimizer, num_of_subnetworks, Noise_power, device):
     model2.train()
@@ -203,7 +224,7 @@ def train(model2, train_loader, optimizer, num_of_subnetworks, Noise_power, devi
         data = data.to(device)
         optimizer.zero_grad()
         out = model2(data)
-        loss = myloss2(out[:,0].to(device), data, data.num_graphs,num_of_subnetworks, Noise_power, device)
+        loss = myloss3(out[:,0].to(device), data, data.num_graphs,num_of_subnetworks, Noise_power, device)
         total_loss += loss.item()
         count = count+1
         loss.backward()
@@ -220,7 +241,7 @@ def test(model2,validation_loader, num_of_subnetworks, Noise_power, device):
         data = data.to(device)
         with torch.no_grad():
             out = model2(data)
-            loss = myloss2(out[:,0].to('cuda'), data, data.num_graphs,num_of_subnetworks,Noise_power, device)
+            loss = myloss3(out[:,0].to('cuda'), data, data.num_graphs,num_of_subnetworks,Noise_power, device)
             total_loss += loss.item()
             count = count+1
     total = total_loss / count
@@ -298,3 +319,4 @@ def findcdfvalue(x,y,yval1,yval2):
         m = np.mean(a)
 
         return m.item()
+
