@@ -17,6 +17,51 @@ from torch_geometric.data import Data
 from torch_geometric.nn.conv import MessagePassing
 from torch.nn import Sequential as Seq, Linear as Lin, ReLU, Sigmoid
 
+# --- EE hyperparameters (choose reasonable defaults) ---
+BANDWIDTH_HZ = 5e6          # 5 MHz; use the same B used in noise calc
+PA_EFFICIENCY = 1         # Typical OFDM PA efficiency (adjust as needed)
+CIRCUIT_POWER_W = 0       # 100 mW per transmitter (adjust)
+EPS = 1e-12                  # numerical floor
+
+def energy_efficiency_loss(out, data, Noise_power_lin, Pmax_lin=1.0):
+    """
+    Negative averaged per-link energy efficiency (bits/Joule) over the batch.
+    Assumes `out` are Sigmoid outputs in (0,1) interpreted as power fractions.
+    - data.y : channel gain matrix H per sample (K x K) or batched layout
+    - Noise_power_lin : noise power in linear Watts at the receiver
+    - Pmax_lin : max transmit power (Watts) that scales the fractions
+    """
+    # Shape handling matches the existing sum-rate code:
+    # out: (num_nodes, 1) or (batch*K, 1); data.y provides H
+    w = out.view(-1)                         # power fractions in (0,1)
+    K = data.num_subnetworks                 # or however K is obtained in the file
+    w = w.view(-1, K)                        # [batch, K]
+
+    # H: [batch, K, K] channel gains (desired on diag, interference off-diag)
+    H = data.y                               # reuse the repo’s convention
+    # Received desired power
+    desired = torch.diagonal(H, dim1=-2, dim2=-1) * (w * Pmax_lin)  # [batch, K]
+
+    # Interference power = H @ p  minus desired
+    p = (w * Pmax_lin).unsqueeze(-1)         # [batch, K, 1]
+    total_rx = torch.matmul(H, p).squeeze(-1)  # [batch, K]
+    interf = total_rx - desired
+
+    # SINR and per-link rate (bits/s)
+    sinr = desired / (interf + Noise_power_lin + EPS)
+    rate_bits_per_s = BANDWIDTH_HZ * torch.log2(1.0 + sinr)
+
+    # Power consumption per link (Watts)
+    tx_consumption = (w * Pmax_lin) / PA_EFFICIENCY
+    p_cons = tx_consumption + CIRCUIT_POWER_W
+
+    # Per-link EE (bits/Joule)
+    ee = rate_bits_per_s / (p_cons + EPS)    # [batch, K]
+
+    # Negative average EE over users and batch
+    loss = -ee.mean()
+    return loss
+
 
 def create_features(dist_matrix, power_matrix):
     K = power_matrix.shape[1]
@@ -251,4 +296,5 @@ def findcdfvalue(x,y,yval1,yval2):
         return 0
     else:
         m = np.mean(a)
+
         return m.item()
