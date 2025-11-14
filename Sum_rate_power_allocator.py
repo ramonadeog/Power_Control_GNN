@@ -159,23 +159,78 @@ def myloss2(out, data, batch_size, num_subnetworks,Noise_power, device):
     
     return torch.neg(Capacity_/num_subnetworks)
 
-def myloss3(out, data, batch_size, num_subnetworks,Noise_power, device):
-    out = out.reshape([-1,num_subnetworks])
+# def myloss3(out, data, batch_size, num_subnetworks,Noise_power, device):
+#     out = out.reshape([-1,num_subnetworks])
 
-    out = out.reshape([-1,num_subnetworks,1,1])
-    power_mat = data.y.reshape([-1,num_subnetworks,num_subnetworks,1])
-    weighted_powers = torch.mul(out,power_mat)
-    eye = torch.eye(num_subnetworks).to(device)
-    desired_rcv_power = torch.sum(torch.mul(weighted_powers.squeeze(-1),eye), dim=1)
+#     out = out.reshape([-1,num_subnetworks,1,1])
+#     power_mat = data.y.reshape([-1,num_subnetworks,num_subnetworks,1])
+#     weighted_powers = torch.mul(out,power_mat)
+#     eye = torch.eye(num_subnetworks).to(device)
+#     desired_rcv_power = torch.sum(torch.mul(weighted_powers.squeeze(-1),eye), dim=1)
     
-    Interference_power = torch.sum(torch.mul(weighted_powers.squeeze(-1),1-eye), dim=1)
-    signal_interference_ratio = torch.divide(desired_rcv_power,Interference_power+Noise_power)
-    capacity = torch.log2(1+signal_interference_ratio)
-    EE = capacity/(weighted_powers.squeeze(-1)/0.8+0.1)
-    EE_ = torch.mean(torch.sum(EE, axis=1))
-    #Capacity_ = torch.mean(torch.sum(capacity, axis=1))
+#     Interference_power = torch.sum(torch.mul(weighted_powers.squeeze(-1),1-eye), dim=1)
+#     signal_interference_ratio = torch.divide(desired_rcv_power,Interference_power+Noise_power)
+#     capacity = torch.log2(1+signal_interference_ratio)
+#     EE = capacity/(weighted_powers.squeeze(-1)/0.8+0.1)
+#     EE_ = torch.mean(torch.sum(EE, axis=1))
+#     #Capacity_ = torch.mean(torch.sum(capacity, axis=1))
     
-    return torch.neg(EE_/num_subnetworks)
+#     return torch.neg(EE_/num_subnetworks)
+
+def myloss3(
+    out, 
+    data, 
+    batch_size, 
+    num_subnetworks, 
+    Noise_power, 
+    device,
+    Pmax_lin=1.0,        # max TX power in Watts used to scale the sigmoid outputs
+    eta=0.8,             # PA efficiency (0<eta<=1). Your code used 0.8 implicitly.
+    Pc_W=0.1,            # circuit power per TX in Watts
+    bandwidth_Hz=None,   # set e.g. 5e6 to get bits/s; leave None for bits/s/Hz
+    eps=1e-12
+):
+    # out: (batch*num_subnetworks, 1) or (batch, num_subnetworks, 1)
+    out = out.reshape([-1, num_subnetworks])                     # [B, K]
+    B = out.shape[0]
+
+    # Transmit power per link (Watts); GNN outputs are fractions in (0,1)
+    p_tx = out * Pmax_lin                                        # [B, K]
+
+    # Channel gain matrix per sample
+    H = data.y.reshape([B, num_subnetworks, num_subnetworks, 1]) # [B, K, K, 1]
+
+    # Received powers H * p; build a [B,K,1] vector of per-link powers
+    p_vec = p_tx.reshape([B, num_subnetworks, 1, 1])             # [B, K, 1, 1]
+    weighted_powers = torch.mul(H, p_vec).squeeze(-1)            # [B, K, K]
+
+    eye = torch.eye(num_subnetworks, device=device)              # [K, K]
+
+    # Desired and interference received powers per link (Watts)
+    desired_rcv_power = torch.sum(weighted_powers * eye, dim=1)          # [B, K]
+    interference_power = torch.sum(weighted_powers * (1.0 - eye), dim=1) # [B, K]
+
+    # SINR and per-link spectral efficiency (bits/s/Hz)
+    sinr = desired_rcv_power / (interference_power + Noise_power + eps)  # [B, K]
+    se_bits_per_s_per_Hz = torch.log2(1.0 + sinr)                        # [B, K]
+
+    # If you want bits/s, scale by bandwidth; otherwise keep bits/s/Hz
+    if bandwidth_Hz is not None:
+        rate_bits_per_s = bandwidth_Hz * se_bits_per_s_per_Hz            # [B, K]
+    else:
+        rate_bits_per_s = se_bits_per_s_per_Hz
+
+    # Power consumption per transmitter (Watts), per link
+    # IMPORTANT: use TX power, not received power
+    p_consumption = (p_tx / max(eta, eps)) + Pc_W                         # [B, K]
+
+    # Per-link energy efficiency (bits/J) or (bits/J/Hz if bandwidth_Hz=None)
+    ee = rate_bits_per_s / (p_consumption + eps)                          # [B, K]
+
+    # Average over users and batch, then negate for loss
+    ee_avg = torch.mean(torch.sum(ee, dim=1) / num_subnetworks)           # scalar
+    return -ee_avg
+
 def energy_efficiency_loss(out, data, Noise_power_lin, Pmax_lin=1.0):
     """
     Negative averaged per-link energy efficiency (bits/Joule) over the batch.
@@ -224,7 +279,7 @@ def train(model2, train_loader, optimizer, num_of_subnetworks, Noise_power, devi
         data = data.to(device)
         optimizer.zero_grad()
         out = model2(data)
-        loss = myloss3(out[:,0].to(device), data, data.num_graphs,num_of_subnetworks, Noise_power, device)
+        loss = myloss3(out[:,0].to(device), data, data.num_graphs,num_of_subnetworks, Noise_power, device,  Pmax_lin=1.0, eta=0.8, Pc_W=0.1, bandwidth_Hz=None, eps=1e-12)
         total_loss += loss.item()
         count = count+1
         loss.backward()
@@ -241,7 +296,7 @@ def test(model2,validation_loader, num_of_subnetworks, Noise_power, device):
         data = data.to(device)
         with torch.no_grad():
             out = model2(data)
-            loss = myloss3(out[:,0].to('cuda'), data, data.num_graphs,num_of_subnetworks,Noise_power, device)
+            loss = myloss3(out[:,0].to(device), data, data.num_graphs,num_of_subnetworks, Noise_power, device,  Pmax_lin=1.0, eta=0.8, Pc_W=0.1, bandwidth_Hz=None, eps=1e-12)
             total_loss += loss.item()
             count = count+1
     total = total_loss / count
@@ -319,5 +374,6 @@ def findcdfvalue(x,y,yval1,yval2):
         m = np.mean(a)
 
         return m.item()
+
 
 
