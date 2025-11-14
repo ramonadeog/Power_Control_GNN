@@ -121,7 +121,7 @@ def run_experiment(f_metric, train_num_subn, test_num_subn, trainsh_sd, testsh_s
     
     
     model_name_ = model_name
-    GNN_sum_rate, GNN_capacities, GNN_weights, GNN_powers = lr_H_mat_code.GNN_test(model_name_, test_loader, num_of_subnetworks, Noise_power, device)
+    GNN_sum_rate, GNN_capacities, GNN_weights, GNN_powers, energy_eff = lr_H_mat_code.GNN_test(model_name_, test_loader, num_of_subnetworks, Noise_power, device)
     
     test_loader = DataLoader(test_Graph_list, batch_size=testing_snapshots, shuffle=False)
     for data in test_loader:
@@ -197,3 +197,4 @@ def run_experiment(f_metric, train_num_subn, test_num_subn, trainsh_sd, testsh_s
        
        
        
+
