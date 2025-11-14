@@ -319,30 +319,85 @@ def trainmodel(name, model2, scheduler, train_loader, validation_loader, optimiz
         scheduler.step()
     return loss_, losst_
 
-def mycapacity(weights, data, batch_size, num_subnetworks, Noise_power):
+# def mycapacity(weights, data, batch_size, num_subnetworks, Noise_power):
 
-    weights = weights.reshape([-1,num_subnetworks,1,1])
+#     weights = weights.reshape([-1,num_subnetworks,1,1])
     
-    power_mat = data.y.reshape([-1,num_subnetworks,num_subnetworks,1])
+#     power_mat = data.y.reshape([-1,num_subnetworks,num_subnetworks,1])
 
-    weighted_powers = torch.mul(weights,power_mat)
+#     weighted_powers = torch.mul(weights,power_mat)
     
-    eye = torch.eye(num_subnetworks)
+#     eye = torch.eye(num_subnetworks)
     
-    desired_rcv_power = torch.sum(torch.mul(weighted_powers.squeeze(-1),eye), dim=1)
+#     desired_rcv_power = torch.sum(torch.mul(weighted_powers.squeeze(-1),eye), dim=1)
    
-    Interference_power = torch.sum(torch.mul(weighted_powers.squeeze(-1),1-eye), dim=1)
+#     Interference_power = torch.sum(torch.mul(weighted_powers.squeeze(-1),1-eye), dim=1)
 
-    signal_interference_ratio = torch.divide(desired_rcv_power,Interference_power+Noise_power)
+#     signal_interference_ratio = torch.divide(desired_rcv_power,Interference_power+Noise_power)
     
-    capacity = torch.log2(1+signal_interference_ratio)
+#     capacity = torch.log2(1+signal_interference_ratio)
     
-    return capacity, weighted_powers 
+#     return capacity, weighted_powers 
+
+def mycapacity(
+    weights,
+    data,
+    batch_size,
+    num_subnetworks,
+    Noise_power,
+    Pmax_lin=1.0,      # max TX power (Watts)
+    eta=0.8,           # PA efficiency
+    Pc_W=0.1,          # circuit power per transmitter (Watts)
+    bandwidth_Hz=None, # if None, EE is in bits/J/Hz; else bits/J
+    eps=1e-12
+):
+    """
+    Compute per-link spectral efficiency and energy efficiency.
+
+    Returns:
+        capacity          : [batch, num_subnetworks] bits/s/Hz
+        weighted_powers   : [batch, num_subnetworks, num_subnetworks]
+                            (received powers)
+        energy_efficiency : [batch, num_subnetworks] bits/J (or bits/J/Hz)
+    """
+    # [B, K, 1, 1]
+    weights = weights.reshape([-1, num_subnetworks, 1, 1])
+    power_mat = data.y.reshape([-1, num_subnetworks, num_subnetworks, 1])
+
+    # Transmit power per link (Watts)
+    p_tx = weights.squeeze(-1).squeeze(-1) * Pmax_lin  # [B, K]
+
+    # Received powers matrix [B, K, K]
+    weighted_powers = torch.mul(weights, power_mat).squeeze(-1)
+
+    eye = torch.eye(num_subnetworks, device=weighted_powers.device)
+
+    # Desired and interference powers per link
+    desired_rcv_power = torch.sum(weighted_powers * eye, dim=1)            # [B, K]
+    Interference_power = torch.sum(weighted_powers * (1 - eye), dim=1)     # [B, K]
+
+    # SINR and per-link capacity
+    sinr = desired_rcv_power / (Interference_power + Noise_power + eps)    # [B, K]
+    capacity = torch.log2(1 + sinr)                                        # bits/s/Hz
+
+    # Optional: convert to bits/s by multiplying with bandwidth
+    if bandwidth_Hz is not None:
+        rate_bits_per_s = capacity * bandwidth_Hz
+    else:
+        rate_bits_per_s = capacity
+
+    # Energy efficiency (bits/J or bits/J/Hz)
+    p_consumption = (p_tx / max(eta, eps)) + Pc_W                          # [B, K]
+    energy_efficiency = rate_bits_per_s / (p_consumption + eps)            # [B, K]
+
+    return capacity, weighted_powers, energy_efficiency
+
 
 def GNN_test(GNNmodel, test_loader, num_of_subnetworks, Noise_power,device):    
-    model2 = torch.load(GNNmodel)
+    model2 = torch.load(GNNmodel, weights_only=False)
     model2.eval()
     capacities = torch.Tensor()
+    energy_eff = torch.Tensor()
     GNN_powers = torch.Tensor() 
     GNN_weights = torch.Tensor() 
     GNN_sum_rate = torch.Tensor()
@@ -351,13 +406,14 @@ def GNN_test(GNNmodel, test_loader, num_of_subnetworks, Noise_power,device):
         data = data.to(device)
         with torch.no_grad():
             out = model2(data)
-            cap, GNN_pow = mycapacity(Pmax*out[:,0].cpu(), data.cpu(), data.num_graphs,num_of_subnetworks, Noise_power)        
+            cap, GNN_pow, ee = mycapacity(Pmax*out[:,0].cpu(), data.cpu(), data.num_graphs,num_of_subnetworks, Noise_power, Pmax_lin=1.0, eta=0.8, Pc_W=0.1,bandwidth_Hz=None, eps=1e-12)        
         GNN_powers = torch.cat((GNN_powers, GNN_pow.cpu()),0)
         GNN_weights = torch.cat((GNN_weights, out[:,0].cpu()),0)
         capacities = torch.cat((capacities,cap.cpu()),0)
+        energy_eff = torch.cat((energy_eff, ee.cpu()),0)
         GNN_sum_rate = torch.cat((GNN_sum_rate,torch.sum(cap,1)),0)
         
-    return GNN_sum_rate, capacities, GNN_weights, GNN_powers
+    return GNN_sum_rate, capacities, GNN_weights, GNN_powers, energy_eff
 
 def generate_cdf(values, bins_):
     data = np.array(values)
@@ -374,6 +430,7 @@ def findcdfvalue(x,y,yval1,yval2):
         m = np.mean(a)
 
         return m.item()
+
 
 
 
