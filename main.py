@@ -48,8 +48,8 @@ def run_experiment(f_metric, train_num_subn, test_num_subn, trainsh_sd, testsh_s
     
     train_config = init_parameters(trainsh_sd,0,train_num_subn)
     val_config = init_parameters(trainsh_sd,1,train_num_subn)
-    training_snapshots = 1000
-    validation_snapshots = 500
+    training_snapshots = 10000
+    validation_snapshots = 5000
     
     
     print('#### Generating training and validation dataset ####')
@@ -214,6 +214,7 @@ def run_experiment(f_metric, train_num_subn, test_num_subn, trainsh_sd, testsh_s
        
        
        
+
 
 
 
