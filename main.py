@@ -196,13 +196,25 @@ def run_experiment(f_metric, train_num_subn, test_num_subn, trainsh_sd, testsh_s
     plt.grid(which='both')
     plt.ylabel('cdf')
     plt.xlabel('SE (b/s/Hz)')
-    
+
+    ## individual energy efficiencies
+    plt.figure(str(trainsh_sd)+str(testsh_sd)+str(test_num_subn)+str(1))
+    x,y = lr_H_mat_code.generate_cdf(energy_eff,1000)
+    plt.plot(x,y, label = "GNN"+f_metric)    
+    x,y = lr_H_mat_code.generate_cdf(ee_ones,1000)
+    plt.plot(x,y, label = "Uniform Power")    
+    plt.title('Individual Subnetworks Energy Efficiency :'+str(test_num_subn)+str(train_num_subn)+str(trainsh_sd)+str(testsh_sd))
+    plt.legend()
+    plt.grid(which='both')
+    plt.ylabel('cdf')
+    plt.xlabel('EE (b/J/Hz)')
       
        
        
        
        
        
+
 
 
 
