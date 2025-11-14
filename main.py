@@ -130,15 +130,21 @@ def run_experiment(f_metric, train_num_subn, test_num_subn, trainsh_sd, testsh_s
     
     
     weights_ones = torch.ones((test_features.shape[0],test_features.shape[1]))
-    capacities_ones, Uniform_pow = lr_H_mat_code.mycapacity(weights_ones, data, data.num_graphs,num_of_subnetworks, Noise_power)
-    
+    #capacities_ones, Uniform_pow = lr_H_mat_code.mycapacity(weights_ones, data, data.num_graphs,num_of_subnetworks, Noise_power)
+    capacities_ones, Uniform_pow, ee_ones = lr_H_mat_code.mycapacity(weights_ones, data, data.num_graphs,num_of_subnetworks, Noise_power, Pmax_lin=1.0, eta=0.8, Pc_W=0.1,bandwidth_Hz=None, eps=1e-12)        
+
     av_ones_cap = (torch.sum(torch.sum(capacities_ones,1))/(testing_snapshots*num_of_subnetworks)).item()
     av_GNN_cap = (torch.sum(GNN_sum_rate)/(testing_snapshots*num_of_subnetworks)).item()
+
+    av_ones_ee = (torch.sum(torch.sum(ee_ones,1))/(testing_snapshots*num_of_subnetworks)).item()
+    av_GNN_ee = (torch.sum(energy_eff)/(testing_snapshots*num_of_subnetworks)).item()
     print('Average spectral efficiency achieved by PCGNN = ', av_GNN_cap)
     print('Average spectral efficiency achieved by Max power = ', av_ones_cap)
     print('PCGNN gain (%)=', ((av_GNN_cap-av_ones_cap)/av_ones_cap)*100)
     
-    
+    print('Average energy efficiency achieved by PCGNN = ', av_GNN_ee)
+    print('Average energy efficiency achieved by Max power = ', av_ones_ee)
+    print('PCGNN EE gain (%)=', ((av_GNN_ee-av_ones_ee)/av_ones_ee)*100)
     ##transmit powers
     plt.figure(str(trainsh_sd)+str(testsh_sd)+str(test_num_subn)+str(0))
     x,y = lr_H_mat_code.generate_cdf(10*np.log10(GNN_weights + 1e-18), 1000)
@@ -197,4 +203,5 @@ def run_experiment(f_metric, train_num_subn, test_num_subn, trainsh_sd, testsh_s
        
        
        
+
 
