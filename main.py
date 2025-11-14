@@ -198,7 +198,7 @@ def run_experiment(f_metric, train_num_subn, test_num_subn, trainsh_sd, testsh_s
     plt.xlabel('SE (b/s/Hz)')
 
     ## individual energy efficiencies
-    plt.figure(str(trainsh_sd)+str(testsh_sd)+str(test_num_subn)+str(1))
+    plt.figure(str(trainsh_sd)+str(testsh_sd)+str(test_num_subn)+str(4))
     x,y = lr_H_mat_code.generate_cdf(energy_eff,1000)
     plt.plot(x,y, label = "GNN"+f_metric)    
     x,y = lr_H_mat_code.generate_cdf(ee_ones,1000)
@@ -214,6 +214,7 @@ def run_experiment(f_metric, train_num_subn, test_num_subn, trainsh_sd, testsh_s
        
        
        
+
 
 
 
