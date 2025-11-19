@@ -295,7 +295,67 @@ def network_energy_efficiency_loss(
     # Negative EE for minimization
     loss = -torch.mean(network_EE)
     return loss
+
+import torch
+
+def multi_objective_loss(
+    out,
+    data,
+    num_subnetworks,
+    Noise_power,
+    alpha=0.5,        # tradeoff factor: 1 = prioritize sum-rate, 0 = prioritize energy saving
+    Pmax_lin=1.0,     # max transmit power (Watts)
+    eta=0.8,          # PA efficiency
+    Pc_W=0.1,         # circuit power per transmitter (Watts)
+    bandwidth_Hz=5e6, # optional, for bits/s
+    eps=1e-12
+):
+    """
+    Multi-objective loss combining sum-rate and energy efficiency / power consumption.
     
+    Returns:
+        loss: scalar tensor to minimize
+    """
+    batch_size = out.shape[0] // num_subnetworks
+    B = batch_size
+    K = num_subnetworks
+
+    # reshape GNN output to [B, K]
+    w = out.view(B, K)  # power fractions
+    p_tx = w * Pmax_lin
+
+    # reshape channel gains
+    H = data.y.view(B, K, K, 1)
+    weighted_powers = (H * p_tx.view(B, K, 1, 1)).squeeze(-1)  # [B, K, K]
+
+    eye = torch.eye(K, device=weighted_powers.device)
+
+    # Desired and interference received powers
+    desired_rcv = torch.sum(weighted_powers * eye, dim=1)        # [B, K]
+    interference = torch.sum(weighted_powers * (1 - eye), dim=1) # [B, K]
+
+    # SINR and per-link rate
+    sinr = desired_rcv / (interference + Noise_power + eps)
+    rate = torch.log2(1.0 + sinr)                                # bits/s/Hz
+
+    # Optionally scale by bandwidth
+    if bandwidth_Hz is not None:
+        rate *= bandwidth_Hz  # bits/s
+
+    # Power consumption per link
+    p_cons = (p_tx / max(eta, eps)) + Pc_W
+
+    # Network sum-rate and total consumed power
+    sum_rate = torch.sum(rate, dim=1)         # [B]
+    total_power = torch.sum(p_cons, dim=1)    # [B]
+
+    # Multi-objective: weighted sum (maximize rate, minimize power)
+    objective = alpha * sum_rate - (1 - alpha) * total_power
+
+    # Convert to loss for minimization
+    loss = -torch.mean(objective)
+    return loss
+
 def energy_efficiency_loss(out, data, Noise_power_lin, Pmax_lin=1.0):
     """
     Negative averaged per-link energy efficiency (bits/Joule) over the batch.
@@ -495,6 +555,7 @@ def findcdfvalue(x,y,yval1,yval2):
         m = np.mean(a)
 
         return m.item()
+
 
 
 
