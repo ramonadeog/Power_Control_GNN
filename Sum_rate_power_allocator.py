@@ -231,6 +231,71 @@ def myloss3(
     ee_avg = torch.mean(torch.sum(ee, dim=1) / num_subnetworks)           # scalar
     return -ee_avg
 
+def network_energy_efficiency_loss(
+    out,
+    data,
+    num_subnetworks,
+    Noise_power,
+    Pmax_lin=1.0,       # max transmit power (Watts)
+    eta=0.8,            # PA efficiency
+    Pc_W=0.1,           # circuit power per transmitter (Watts)
+    bandwidth_Hz=5e6,   # optional, set to None for bits/J/Hz
+    eps=1e-12
+):
+    """
+    Compute negative network-wide energy efficiency over the batch.
+    
+    Inputs:
+        out            : [batch*K, 1] GNN output (Sigmoid power fractions)
+        data.y         : [batch, K, K, 1] channel gain matrices
+        num_subnetworks: K, number of links
+        Noise_power    : receiver noise power (Watts)
+        Pmax_lin       : maximum TX power (Watts)
+        eta            : PA efficiency
+        Pc_W           : circuit power per TX (Watts)
+        bandwidth_Hz   : bandwidth to scale rate (bits/s). If None, leave bits/s/Hz
+        eps            : small number to avoid division by zero
+    Returns:
+        loss : scalar (negative network EE averaged over batch)
+    """
+    batch_size = out.shape[0] // num_subnetworks
+    B = batch_size
+    K = num_subnetworks
+
+    # reshape GNN output to [B, K]
+    w = out.view(B, K)  # power fractions
+    p_tx = w * Pmax_lin
+
+    # reshape channel gains
+    H = data.y.view(B, K, K, 1)
+    weighted_powers = (H * p_tx.view(B, K, 1, 1)).squeeze(-1)  # [B, K, K]
+
+    eye = torch.eye(K, device=weighted_powers.device)
+
+    # Desired and interference received powers
+    desired_rcv = torch.sum(weighted_powers * eye, dim=1)        # [B, K]
+    interference = torch.sum(weighted_powers * (1 - eye), dim=1) # [B, K]
+
+    # SINR and per-link rate
+    sinr = desired_rcv / (interference + Noise_power + eps)
+    rate = torch.log2(1.0 + sinr)                                # bits/s/Hz
+
+    # Scale by bandwidth if desired
+    if bandwidth_Hz is not None:
+        rate *= bandwidth_Hz  # bits/s
+
+    # Power consumption per link
+    p_cons = (p_tx / max(eta, eps)) + Pc_W
+
+    # Network EE = sum of rates / sum of powers
+    numerator = torch.sum(rate, dim=1)        # [B]
+    denominator = torch.sum(p_cons, dim=1)   # [B]
+    network_EE = numerator / (denominator + eps)  # [B]
+
+    # Negative EE for minimization
+    loss = -torch.mean(network_EE)
+    return loss
+    
 def energy_efficiency_loss(out, data, Noise_power_lin, Pmax_lin=1.0):
     """
     Negative averaged per-link energy efficiency (bits/Joule) over the batch.
@@ -430,6 +495,7 @@ def findcdfvalue(x,y,yval1,yval2):
         m = np.mean(a)
 
         return m.item()
+
 
 
 
