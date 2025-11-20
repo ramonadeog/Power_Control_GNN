@@ -234,6 +234,7 @@ def myloss3(
 def network_energy_efficiency_loss(
     out,
     data,
+    batch_size, 
     num_subnetworks,
     Noise_power,
     device,
@@ -302,6 +303,7 @@ import torch
 def multi_objective_loss(
     out,
     data,
+    batch_size, 
     num_subnetworks,
     Noise_power,
     device,
@@ -557,6 +559,7 @@ def findcdfvalue(x,y,yval1,yval2):
         m = np.mean(a)
 
         return m.item()
+
 
 
 
