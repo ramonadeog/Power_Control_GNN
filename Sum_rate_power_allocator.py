@@ -236,6 +236,7 @@ def network_energy_efficiency_loss(
     data,
     num_subnetworks,
     Noise_power,
+    device,
     Pmax_lin=1.0,       # max transmit power (Watts)
     eta=0.8,            # PA efficiency
     Pc_W=0.1,           # circuit power per transmitter (Watts)
@@ -303,6 +304,7 @@ def multi_objective_loss(
     data,
     num_subnetworks,
     Noise_power,
+    device,
     alpha=0.5,        # tradeoff factor: 1 = prioritize sum-rate, 0 = prioritize energy saving
     Pmax_lin=1.0,     # max transmit power (Watts)
     eta=0.8,          # PA efficiency
@@ -555,6 +557,7 @@ def findcdfvalue(x,y,yval1,yval2):
         m = np.mean(a)
 
         return m.item()
+
 
 
 
