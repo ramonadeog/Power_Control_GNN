@@ -16,7 +16,7 @@ import torch
 from torch_geometric.loader import DataLoader
 import subnetwork_generator
 import Sum_rate_power_allocator as lr_H_mat_code
-
+import os
 
 class init_parameters:
     def __init__(self,S_sd,rng, num_of_subn):
@@ -231,6 +231,7 @@ def run_experiment(f_metric, train_num_subn, test_num_subn, trainsh_sd, testsh_s
        
        
        
+
 
 
 
