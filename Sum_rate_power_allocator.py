@@ -432,7 +432,7 @@ def test(model2,validation_loader, num_of_subnetworks, Noise_power, device):
 def trainmodel(name, model2, scheduler, train_loader, validation_loader, optimizer, num_of_subnetworks, Noise_power, device):
     loss_ = []
     losst_ = []
-    for epoch in range(1,500):
+    for epoch in range(1,400):
         losst = train(model2, train_loader, optimizer, num_of_subnetworks, Noise_power, device)
         loss1 = test(model2,validation_loader, num_of_subnetworks, Noise_power, device)
         loss_.append(loss1)
@@ -555,6 +555,7 @@ def findcdfvalue(x,y,yval1,yval2):
         m = np.mean(a)
 
         return m.item()
+
 
 
 
