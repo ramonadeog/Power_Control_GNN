@@ -37,7 +37,7 @@ class init_parameters:
 
 f_metric_ = ['hH','dD', 'hD']   #hH, dD, hD #The type of graph attribute hH - use full channel gain, dD - use only distance information, hD - use desired link channel gain and interfering link distances
 
-def run_experiment(f_metric, train_num_subn, test_num_subn, trainsh_sd, testsh_sd, device):
+def run_experiment(f_metric, train_num_subn, test_num_subn, trainsh_sd, testsh_sd, device, save_dir='results', save_name='experiment_results.mat'):
     #f_metric options - hH, dD, hD #The type of graph attribute hH - use full channel gain, dD - use only distance information, hD - use desired link channel gain and interfering link distances  
     #train_num_subn - number of subnetworks in training deployment - choose between values 20, 25, 10, for larger values, there is a need to increase self.deploy_length
     #test_num_subn  - number of subnetworks in testing deployments - choose between values 20, 25, 10, for larger values, there is a need to increase self.deploy_length
@@ -145,6 +145,23 @@ def run_experiment(f_metric, train_num_subn, test_num_subn, trainsh_sd, testsh_s
     print('Average energy efficiency achieved by PCGNN = ', av_GNN_ee)
     print('Average energy efficiency achieved by Max power = ', av_ones_ee)
     print('PCGNN EE gain (%)=', ((av_GNN_ee-av_ones_ee)/av_ones_ee)*100)
+
+       # --- create folder if it doesn't exist ---
+    os.makedirs(save_dir, exist_ok=True)
+    save_path = os.path.join(save_dir, save_name)
+
+    # --- save to MATLAB .mat file ---
+    sio.savemat(save_path, {
+        'GNN_sum_rate': GNN_sum_rate,
+        'GNN_capacities': GNN_capacities,
+        'GNN_weights': GNN_weights,
+        'GNN_powers': GNN_powers,
+        'GNN_EE': energy_eff,
+        'capacities_ones': capacities_ones,
+        'uniform_powers': Uniform_pow,
+        'Uniform_EE': ee_ones
+    })
+    
     ##transmit powers
     plt.figure(str(trainsh_sd)+str(testsh_sd)+str(test_num_subn)+str(0))
     x,y = lr_H_mat_code.generate_cdf(10*np.log10(GNN_weights + 1e-18), 1000)
@@ -214,6 +231,7 @@ def run_experiment(f_metric, train_num_subn, test_num_subn, trainsh_sd, testsh_s
        
        
        
+
 
 
 
