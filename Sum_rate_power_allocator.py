@@ -427,7 +427,7 @@ def test(model2,validation_loader, num_of_subnetworks, Noise_power, device):
         with torch.no_grad():
             out = model2(data)
             #loss = network_energy_efficiency_loss(out[:,0].to(device), data, data.num_graphs,num_of_subnetworks, Noise_power, device,  Pmax_lin=1.0, eta=0.8, Pc_W=0.1, bandwidth_Hz=None, eps=1e-12)
-            loss = multi_objective_loss(out[:,0].to(device), data, data.num_graphs, num_of_subnetworks, Noise_power, device, alpha=1.0,Pmax_lin=0.25, eta=0.8, Pc_W=0.1, bandwidth_Hz=None, eps=1e-12)
+            loss = multi_objective_loss(out[:,0].to(device), data, data.num_graphs, num_of_subnetworks, Noise_power, device, alpha=0.25,Pmax_lin=1.0, eta=0.8, Pc_W=0.1, bandwidth_Hz=None, eps=1e-12)
             total_loss += loss.item()
             count = count+1
     total = total_loss / count
@@ -561,6 +561,7 @@ def findcdfvalue(x,y,yval1,yval2):
         m = np.mean(a)
 
         return m.item()
+
 
 
 
